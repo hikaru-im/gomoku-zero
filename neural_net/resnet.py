@@ -110,7 +110,7 @@ class ResNetGomoku(nn.Module):
         value = value.squeeze(-1)
 
         # Cross-entropy with soft targets (probability distributions)
-        log_p = F.log_softmax(logits, dim=-1)
+        log_p = F.log_softmax(logits, dim=-1).clamp(min=-100)
         policy_loss = -(target_policies * log_p).sum(dim=-1).mean()
         value_loss = F.mse_loss(value, target_values)
 
