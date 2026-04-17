@@ -279,93 +279,52 @@ bool Board::has_overline_at(int x, int y) {
     return result;
 }
 
-// ─── Count open threes at (x,y) ───
+// ─── Helper: check if placing black at (px,py) creates exactly five ───
+// Assumes (x,y) is already placed (caller manages that).
+// (px,py) must differ from (x,y).
 
-int Board::count_open_threes(int x, int y) {
-    // Place black temporarily
-    int idx = y * BOARD_SIZE + x;
-    black_.set(idx);
-    int open_three_count = 0;
-
-    int dirs[4][2] = {{1,0}, {0,1}, {1,1}, {1,-1}};
-    for (auto& d : dirs) {
-        int dx = d[0], dy = d[1];
-
-        // Extract line of length up to 11 centered on (x,y)
-        // We need 5 cells on each side to check open-three patterns
-        int line[11];
-        int cx = x - 5*dx, cy = y - 5*dy;
-        for (int i = 0; i < 11; i++) {
-            if (cx >= 0 && cx < BOARD_SIZE && cy >= 0 && cy < BOARD_SIZE) {
-                line[i] = stone_at(cx, cy);
-            } else {
-                line[i] = 2; // treat off-board as white (blocking)
-            }
-            cx += dx; cy += dy;
-        }
-
-        // The placed stone is at position 5 in the line.
-        // Check for open-three patterns within this window.
-        // An "open three" is a configuration where black has exactly 3 stones
-        // in a 5-cell span, with both ends empty, and adding one stone creates
-        // an open four (which is 4 in 5 with both ends empty).
-
-        // Scan all 5-cell windows that contain position 5 (the placed stone)
-        bool found_open_three = false;
-        for (int start = 0; start <= 6 && !found_open_three; start++) {
-            if (start > 5 || start + 5 < 5) continue; // window must contain pos 5
-
-            int blacks = 0, whites = 0, empties = 0;
-            int empty_positions[5];
-            int ep_count = 0;
-
-            for (int i = 0; i < 5; i++) {
-                int pos = start + i;
-                if (line[pos] == 1) blacks++;
-                else if (line[pos] == 2) whites++;
-                else { empties++; empty_positions[ep_count++] = i; }
-            }
-
-            // Need exactly 3 black, 2 empty in the window
-            if (blacks != 3 || empties != 2) continue;
-
-            // At minimum, the 5-window has both endpoints empty
-            if (line[start] != 0 || line[start + 4] != 0) continue;
-
-            // Now check: can one of the two empty positions become an open four?
-            // An open four is 4 black in a 5-window with both ends empty.
-            for (int e = 0; e < ep_count && !found_open_three; e++) {
-                int test_line[5];
-                memcpy(test_line, &line[start], 5);
-                test_line[empty_positions[e]] = 1; // fill one empty with black
-
-                int tb = 0, te = 0;
-                for (int i = 0; i < 5; i++) {
-                    if (test_line[i] == 1) tb++;
-                    else if (test_line[i] == 0) te++;
-                }
-
-                if (tb == 4 && te == 1) {
-                    // 4 black + 1 empty in a 5-window
-                    // Check if it's an open four: both sides outside are empty
-                    int tl = (start > 0) ? line[start - 1] : 2;
-                    int tr = (start + 5 < 11) ? line[start + 5] : 2;
-                    if (tl == 0 && tr == 0) {
-                        // This is an open three!
-                        found_open_three = true;
-                    }
-                }
-            }
-        }
-
-        if (found_open_three) open_three_count++;
-    }
-
-    black_.clear(idx);
-    return open_three_count;
+bool Board::would_be_exactly_five(int px, int py) {
+    int pidx = py * BOARD_SIZE + px;
+    black_.set(pidx);
+    bool result = has_exactly_five(black_);
+    black_.clear(pidx);
+    return result;
 }
 
-// ─── Count fours at (x,y) ───
+// ─── Helper: check if placing black at (px,py) creates exactly five
+//  in a specific direction. Used for straight four detection.
+
+bool Board::would_be_exactly_five_in_dir(int px, int py, int dx, int dy) {
+    int pidx = py * BOARD_SIZE + px;
+    black_.set(pidx);
+    // Count consecutive through (px,py) in direction (dx,dy)
+    int count = 1;
+    for (int i = 1; i <= 4; i++) {
+        int nx = px + i*dx, ny = py + i*dy;
+        if (nx >= 0 && nx < BOARD_SIZE && ny >= 0 && ny < BOARD_SIZE && is_black(nx, ny))
+            count++;
+        else break;
+    }
+    for (int i = 1; i <= 4; i++) {
+        int nx = px - i*dx, ny = py - i*dy;
+        if (nx >= 0 && nx < BOARD_SIZE && ny >= 0 && ny < BOARD_SIZE && is_black(nx, ny))
+            count++;
+        else break;
+    }
+    black_.clear(pidx);
+    if (count != 5) return false;
+    // Verify no 6th stone on either end
+    int ax = px + 5*dx, ay = py + 5*dy;
+    bool has_after = (ax >= 0 && ax < BOARD_SIZE && ay >= 0 && ay < BOARD_SIZE && is_black(ax, ay));
+    int bx = px - 5*dx, by = py - 5*dy;
+    bool has_before = (bx >= 0 && bx < BOARD_SIZE && by >= 0 && by < BOARD_SIZE && is_black(bx, by));
+    return !has_after && !has_before;
+}
+
+// ─── Count fours at (x,y) — strict Renju definition ───
+// A "four" = a configuration where one more black stone creates exactly five.
+// After placing black at (x,y), for each direction, check if any empty point
+// on the line can complete exactly five.
 
 int Board::count_fours(int x, int y) {
     int idx = y * BOARD_SIZE + x;
@@ -375,78 +334,18 @@ int Board::count_fours(int x, int y) {
     int dirs[4][2] = {{1,0}, {0,1}, {1,1}, {1,-1}};
     for (auto& d : dirs) {
         int dx = d[0], dy = d[1];
-
-        // Extract line of length 11 centered on (x,y)
-        int line[11];
-        int cx = x - 5*dx, cy = y - 5*dy;
-        for (int i = 0; i < 11; i++) {
-            if (cx >= 0 && cx < BOARD_SIZE && cy >= 0 && cy < BOARD_SIZE)
-                line[i] = stone_at(cx, cy);
-            else
-                line[i] = 2; // off-board = blocking
-            cx += dx; cy += dy;
-        }
-
         bool found_four = false;
-        // Scan all 5-cell windows and 6-cell windows containing position 5
-        // A "four" is any pattern where one more stone completes five-in-a-row.
-        // This includes:
-        //   Solid: B B B B _  or  _ B B B B
-        //   Split: B B _ B B  or  B _ B B B  or  B B B _ B
 
-        // Check all 5-cell windows containing position 5
-        for (int start = 0; start <= 6 && !found_four; start++) {
-            if (start > 5 || start + 5 < 5) continue;
+        // Scan empty points within ±5 along the line
+        for (int dist = -5; dist <= 5 && !found_four; dist++) {
+            if (dist == 0) continue;
+            int px = x + dist * dx, py = y + dist * dy;
+            if (px < 0 || px >= BOARD_SIZE || py < 0 || py >= BOARD_SIZE) continue;
+            if (!is_empty(px, py)) continue;
 
-            int blacks = 0, whites = 0, empties = 0;
-            for (int i = 0; i < 5; i++) {
-                int pos = start + i;
-                if (line[pos] == 1) blacks++;
-                else if (line[pos] == 2) whites++;
-                else empties++;
-            }
-
-            if (blacks == 4 && empties == 1 && whites == 0) {
+            // Try placing black at (px,py) and check for exactly five
+            if (would_be_exactly_five(px, py)) {
                 found_four = true;
-            }
-        }
-
-        // Also check 6-cell windows for split fours like B B _ B B
-        if (!found_four) {
-            for (int start = 0; start <= 5 && !found_four; start++) {
-                if (start > 5 || start + 6 < 5) continue;
-
-                int blacks = 0, whites = 0, empties = 0;
-                for (int i = 0; i < 6; i++) {
-                    int pos = start + i;
-                    if (line[pos] == 1) blacks++;
-                    else if (line[pos] == 2) whites++;
-                    else empties++;
-                }
-
-                if (blacks == 4 && empties == 2 && whites == 0) {
-                    // Check if one stone fills both empties? No, that's impossible.
-                    // Check if filling one empty creates 5 in a row within this window
-                    for (int i = 0; i < 6 && !found_four; i++) {
-                        int pos = start + i;
-                        if (line[pos] != 0) continue;
-
-                        // Fill this empty with black and check for 5-in-a-row
-                        int temp_line[6];
-                        memcpy(temp_line, &line[start], 6);
-                        temp_line[i] = 1;
-
-                        // Check all 5-cell sub-windows of this 6-cell window
-                        for (int s = 0; s <= 1; s++) {
-                            int b5 = 0, w5 = 0;
-                            for (int j = 0; j < 5; j++) {
-                                if (temp_line[s + j] == 1) b5++;
-                                else if (temp_line[s + j] == 2) w5++;
-                            }
-                            if (b5 == 5) { found_four = true; break; }
-                        }
-                    }
-                }
             }
         }
 
@@ -455,6 +354,109 @@ int Board::count_fours(int x, int y) {
 
     black_.clear(idx);
     return four_count;
+}
+
+// ─── Helper: shallow forbidden check (overline + double-four only, no double-three) ───
+// Used by live-three detection to break recursion at depth 1.
+
+bool Board::is_forbidden_no_three(int px, int py) {
+    if (!is_empty(px, py)) return false;
+
+    int pidx = py * BOARD_SIZE + px;
+    black_.set(pidx);
+
+    // Exactly five → not forbidden
+    if (has_exactly_five(black_)) {
+        black_.clear(pidx);
+        return false;
+    }
+
+    // Overline → forbidden
+    black_.clear(pidx);
+    if (has_overline_at(px, py)) return true;
+
+    // Double-four → forbidden
+    if (count_fours(px, py) >= 2) return true;
+
+    // Do NOT check double-three (this breaks recursion)
+    return false;
+}
+
+// ─── Count live threes at (x,y) — strict Renju definition ───
+// A "live three" = a configuration where placing one more black stone (at a legal
+// non-forbidden point, without immediately making five) creates a straight four.
+// A "straight four" = 4 consecutive blacks with empty on both sides, where either
+// side can complete exactly five.
+
+int Board::count_live_threes(int x, int y) {
+    int idx = y * BOARD_SIZE + x;
+    black_.set(idx);
+    int three_count = 0;
+
+    int dirs[4][2] = {{1,0}, {0,1}, {1,1}, {1,-1}};
+    for (auto& d : dirs) {
+        int dx = d[0], dy = d[1];
+        bool found_live_three = false;
+
+        // Scan empty points within ±5 along the line
+        for (int dist = -5; dist <= 5 && !found_live_three; dist++) {
+            if (dist == 0) continue;
+            int px = x + dist * dx, py = y + dist * dy;
+            if (px < 0 || px >= BOARD_SIZE || py < 0 || py >= BOARD_SIZE) continue;
+            if (!is_empty(px, py)) continue;
+
+            // Placing at (px,py) must NOT immediately make five
+            // (if it makes five, this is already a four, not a three)
+            black_.set(py * BOARD_SIZE + px);
+            bool makes_five = has_exactly_five(black_);
+            black_.clear(py * BOARD_SIZE + px);
+            if (makes_five) continue;
+
+            // Check if (px,py) is forbidden (shallow: overline + double-four only)
+            // If forbidden, this extension is illegal → not a live three
+            if (is_forbidden_no_three(px, py)) continue;
+
+            // Check if placing at (px,py) creates a straight four in this direction
+            // A straight four = 4 consecutive blacks with both neighbors empty,
+            // and filling either neighbor creates exactly five.
+            black_.set(py * BOARD_SIZE + px);
+
+            // Find 4-consecutive-black segment through (px,py) in this direction
+            int count = 1;
+            int ex = px + dx, ey = py + dy;
+            while (ex >= 0 && ex < BOARD_SIZE && ey >= 0 && ey < BOARD_SIZE && is_black(ex, ey)) {
+                count++;
+                ex += dx; ey += dy;
+            }
+            // (ex, ey) is now the cell AFTER the consecutive run in positive direction
+            int bx = px - dx, by = py - dy;
+            while (bx >= 0 && bx < BOARD_SIZE && by >= 0 && by < BOARD_SIZE && is_black(bx, by)) {
+                count++;
+                bx -= dx; by -= dy;
+            }
+            // (bx, by) is now the cell BEFORE the consecutive run in negative direction
+
+            if (count == 4) {
+                // Check both ends are empty and can create exactly five
+                bool pos_end_ok = (ex >= 0 && ex < BOARD_SIZE && ey >= 0 && ey < BOARD_SIZE)
+                                  && is_empty(ex, ey)
+                                  && would_be_exactly_five_in_dir(ex, ey, dx, dy);
+                bool neg_end_ok = (bx >= 0 && bx < BOARD_SIZE && by >= 0 && by < BOARD_SIZE)
+                                  && is_empty(bx, by)
+                                  && would_be_exactly_five_in_dir(bx, by, dx, dy);
+                if (pos_end_ok && neg_end_ok) {
+                    found_live_three = true;
+                }
+            }
+
+            black_.clear(py * BOARD_SIZE + px);
+        }
+
+        if (found_live_three) three_count++;
+    }
+
+    black_.clear(idx);
+    return three_count;
 }
 
 // ─── Combined forbidden check ───
@@ -479,8 +481,8 @@ bool Board::is_forbidden(int x, int y) {
     // Check 4-4
     if (count_fours(x, y) >= 2) return true;
 
-    // Check 3-3
-    if (count_open_threes(x, y) >= 2) return true;
+    // Check 3-3 (with recursive legality verification)
+    if (count_live_threes(x, y) >= 2) return true;
 
     return false;
 }

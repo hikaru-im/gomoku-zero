@@ -130,9 +130,12 @@ private:
     bool has_five_plus(const Bitset225& stones) const;       // 5+ in a row (for white)
 
     // --- Forbidden helpers ---
-    bool has_overline_at(int x, int y);   // 6+ in a row at (x,y) after placing black
-    int  count_open_threes(int x, int y);  // number of open-3 lines created
-    int  count_fours(int x, int y);        // number of four lines created
+    bool has_overline_at(int x, int y);          // 6+ in a row at (x,y) after placing black
+    bool would_be_exactly_five(int px, int py);   // placing black at (px,py) creates exactly five
+    bool would_be_exactly_five_in_dir(int px, int py, int dx, int dy);
+    int  count_fours(int x, int y);                // number of four lines created (strict Renju)
+    bool is_forbidden_no_three(int px, int py);    // forbidden check without double-three
+    int  count_live_threes(int x, int y);          // number of live-3 lines (strict Renju)
 
     // Line extraction: fill cells[] with stone states along direction through (x,y)
     // 0=empty, 1=black, 2=white.  len is number of valid cells (up to 15)
