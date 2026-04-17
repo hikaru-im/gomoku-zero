@@ -43,7 +43,7 @@ cdef class PyBoard:
 
     def copy(self):
         cdef PyBoard b = PyBoard()
-        b._board.copy_from(deref(self._board))
+        b._board.copy_from(self._board[0])
         return b
 
     def reset(self):
