@@ -51,9 +51,6 @@ void Board::init_masks() {
 
     // For each direction and shift count k (1..4),
     // compute mask of positions that can safely be shifted right
-    // Direction steps: H=1, V=15, D1=16, D2=14
-    int steps[4] = {STEP_H, STEP_V, STEP_D1, STEP_D2};
-
     for (int d = 0; d < 4; d++) {
         for (int k = 0; k < 5; k++) {
             if (k == 0) {
