@@ -84,10 +84,9 @@ def play_one_game(network, device="cpu", num_simulations=400,
             result = -1 if player == 1 else 1
             break
 
-        # Check game end
-        winner_check = 1 if player == 2 else 2  # opponent just played
-        if board.check_win(winner_check):
-            result = 1 if winner_check == 1 else -1
+        # Check game end — player just moved, check if they won
+        if board.check_win(player):
+            result = 1 if player == 1 else -1
             break
         if board.is_full():
             result = 0

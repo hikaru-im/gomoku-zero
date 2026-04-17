@@ -465,11 +465,11 @@ bool Board::is_forbidden(int x, int y) {
     // Must be empty
     if (!is_empty(x, y)) return false;
 
-    // If placing here creates five-in-a-row for black, it's NEVER forbidden
-    // (winning move overrides all forbidden rules)
+    // If placing here creates exactly five-in-a-row for black, it's NEVER forbidden
+    // (winning move overrides all forbidden rules; overline is still forbidden)
     int idx = y * BOARD_SIZE + x;
     black_.set(idx);
-    bool makes_five = has_five(black_);
+    bool makes_five = has_exactly_five(black_);
     black_.clear(idx);
     if (makes_five) return false;
 

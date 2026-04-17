@@ -96,7 +96,9 @@ class ResNetGomoku(nn.Module):
         return log_probs, value.squeeze(-1)
 
     def loss(self, states, target_policies, target_values):
-        """Compute combined loss = MSE(value) + CrossEntropy(policy) + L2.
+        """Compute combined loss = MSE(value) + CrossEntropy(policy).
+
+        L2 regularization is handled by the optimizer (weight_decay).
 
         Args:
             states: (batch, 3, 15, 15) float32
@@ -114,13 +116,7 @@ class ResNetGomoku(nn.Module):
         policy_loss = -(target_policies * log_p).sum(dim=-1).mean()
         value_loss = F.mse_loss(value, target_values)
 
-        # L2 regularization on weights (exclude BN params)
-        l2_reg = 0.0
-        for param in self.parameters():
-            if param.dim() > 1:
-                l2_reg += param.norm(2).square()
-
-        return policy_loss + value_loss + 1e-4 * l2_reg, policy_loss, value_loss
+        return policy_loss + value_loss, policy_loss, value_loss
 
     def save_checkpoint(self, path):
         torch.save({

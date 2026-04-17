@@ -101,8 +101,11 @@ class MCTSBatch:
             else:
                 value = self._expand_leaf(node, sim_board, network, device)
 
-            # Backup — include the leaf node itself so it gets visit_count updated
-            path.append(node)
+            # Backup — root has no virtual_loss, update it separately
+            root.visit_count += 1
+            root.value_sum += value
+            value = -value  # flip perspective for children
+
             for visited_node in reversed(path):
                 visited_node.virtual_loss -= 1
                 visited_node.visit_count += 1
@@ -165,13 +168,16 @@ class MCTSBatch:
                         value = 1.0 if sim_board.current_player == 1 else -1.0
                     else:
                         value = 0.0
-                    # Backup immediately — include the terminal node itself
-                    path.append(node)
+                    # Backup immediately — root has no virtual_loss
+                    roots[i].visit_count += 1
+                    roots[i].value_sum += value
+                    child_val = -value
+
                     for visited_node in reversed(path):
                         visited_node.virtual_loss -= 1
                         visited_node.visit_count += 1
-                        visited_node.value_sum += value
-                        value = -value
+                        visited_node.value_sum += child_val
+                        child_val = -child_val
                 else:
                     leaf_infos.append((i, node, sim_board, path))
 
@@ -294,9 +300,11 @@ class MCTSBatch:
 
             node.value_sum = float(value)
 
-            # Backup — include the leaf node itself
-            path.append(node)
-            v = float(value)
+            # Backup — root has no virtual_loss
+            roots[i].visit_count += 1
+            roots[i].value_sum += float(value)
+            v = -float(value)
+
             for visited_node in reversed(path):
                 visited_node.virtual_loss -= 1
                 visited_node.visit_count += 1
