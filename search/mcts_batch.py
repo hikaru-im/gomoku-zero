@@ -144,11 +144,6 @@ class MCTSBatch:
             for root in roots:
                 self._add_dirichlet_noise(root)
 
-        # Track root values for initial expansion
-        root_values = [0.0] * n
-        for i in unexpanded:
-            root_values[i] = roots[i].q_value
-
         for sim in range(self.num_simulations):
             # Collect leaf nodes to evaluate in batch
             leaf_infos = []  # (root_idx, node, board_copy, path)
