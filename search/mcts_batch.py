@@ -49,12 +49,10 @@ class MCTSBatch:
     """
 
     def __init__(self, num_simulations=400, batch_size=16,
-                 c_puct=1.5, virtual_loss_weight=3.0,
-                 dirichlet_alpha=0.3, dirichlet_epsilon=0.25):
+                 c_puct=1.5, dirichlet_alpha=0.3, dirichlet_epsilon=0.25):
         self.num_simulations = num_simulations
         self.batch_size = batch_size
         self.c_puct = c_puct
-        self.virtual_loss_weight = virtual_loss_weight
         self.dirichlet_alpha = dirichlet_alpha
         self.dirichlet_epsilon = dirichlet_epsilon
 

@@ -296,7 +296,7 @@ class GomokuTrainer:
         while True:
             player_idx = board.current_player - 1  # 0 or 1
             net = nets[player_idx]
-            temperature = 1.0 if move_count < 30 else 0.0
+            temperature = 0.0  # evaluation: always greedy
 
             mcts = MCTSBatch(num_simulations=num_simulations)
             root = Node()
