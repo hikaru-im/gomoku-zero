@@ -101,16 +101,16 @@ class MCTSBatch:
             else:
                 value = self._expand_leaf(node, sim_board, network, device)
 
-            # Backup — root has no virtual_loss, update it separately
-            root.visit_count += 1
-            root.value_sum += value
-            value = -value  # flip perspective for children
-
+            # Backup — walk from leaf up to root's children, then update root
             for visited_node in reversed(path):
                 visited_node.virtual_loss -= 1
                 visited_node.visit_count += 1
                 visited_node.value_sum += value
                 value = -value  # flip perspective
+
+            # Root has no virtual_loss; receives the fully-propagated value
+            root.visit_count += 1
+            root.value_sum += value
 
         return self._get_visit_probs(root)
 
@@ -168,22 +168,21 @@ class MCTSBatch:
                         value = 1.0 if sim_board.current_player == 1 else -1.0
                     else:
                         value = 0.0
-                    # Backup immediately — root has no virtual_loss
-                    roots[i].visit_count += 1
-                    roots[i].value_sum += value
-                    child_val = -value
-
+                    # Backup — walk from leaf up, then update root
                     for visited_node in reversed(path):
                         visited_node.virtual_loss -= 1
                         visited_node.visit_count += 1
-                        visited_node.value_sum += child_val
-                        child_val = -child_val
+                        visited_node.value_sum += value
+                        value = -value
+
+                    roots[i].visit_count += 1
+                    roots[i].value_sum += value
                 else:
                     leaf_infos.append((i, node, sim_board, path))
 
             # Batch evaluate all leaves
             if leaf_infos:
-                self._batch_expand_generic(leaf_infos, network, device)
+                self._batch_expand_generic(leaf_infos, roots, network, device)
 
         return [self._get_visit_probs(root) for root in roots]
 
@@ -275,7 +274,7 @@ class MCTSBatch:
                     node.children[action] = child
             node.value_sum = float(value)
 
-    def _batch_expand_generic(self, leaf_infos, network, device):
+    def _batch_expand_generic(self, leaf_infos, roots, network, device):
         """Batch-expand arbitrary leaf nodes and backup values."""
         states = []
         for (_, node, sim_board, path) in leaf_infos:
@@ -289,7 +288,7 @@ class MCTSBatch:
 
         for idx_pos, (i, node, sim_board, path) in enumerate(leaf_infos):
             log_probs = log_probs_np[idx_pos]
-            value = values_np[idx_pos]
+            value = float(values_np[idx_pos])
 
             legal_mask = sim_board.get_legal_moves_mask().flatten()
             for action in range(225):
@@ -298,18 +297,18 @@ class MCTSBatch:
                     child = Node(parent=node, prior=prior, action=action)
                     node.children[action] = child
 
-            node.value_sum = float(value)
+            node.value_sum = value
 
-            # Backup — root has no virtual_loss
-            roots[i].visit_count += 1
-            roots[i].value_sum += float(value)
-            v = -float(value)
-
+            # Backup — walk from leaf up, then update root
+            v = value
             for visited_node in reversed(path):
                 visited_node.virtual_loss -= 1
                 visited_node.visit_count += 1
                 visited_node.value_sum += v
                 v = -v
+
+            roots[i].visit_count += 1
+            roots[i].value_sum += v
 
     def _get_visit_probs(self, root, temperature=1.0):
         """Get action probabilities from visit counts with temperature."""
