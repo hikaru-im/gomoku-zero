@@ -232,9 +232,6 @@ class MCTSBatch:
                 child = Node(parent=node, prior=prior, action=action)
                 node.children[action] = child
 
-        # Initialize node value
-        node.visit_count = 0
-        node.value_sum = value_np
         return value_np
 
     def _add_dirichlet_noise(self, root):
@@ -296,8 +293,6 @@ class MCTSBatch:
                     prior = math.exp(log_probs[action])
                     child = Node(parent=node, prior=prior, action=action)
                     node.children[action] = child
-
-            node.value_sum = value
 
             # Backup — walk from leaf up, then update root
             v = value

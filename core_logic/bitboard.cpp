@@ -343,8 +343,8 @@ int Board::count_fours(int x, int y) {
             if (px < 0 || px >= BOARD_SIZE || py < 0 || py >= BOARD_SIZE) continue;
             if (!is_empty(px, py)) continue;
 
-            // Try placing black at (px,py) and check for exactly five
-            if (would_be_exactly_five(px, py)) {
+            // Try placing black at (px,py) and check for exactly five in THIS direction
+            if (would_be_exactly_five_in_dir(px, py, dx, dy)) {
                 found_four = true;
             }
         }
