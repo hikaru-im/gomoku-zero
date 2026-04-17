@@ -269,7 +269,6 @@ class MCTSBatch:
                     prior = math.exp(log_probs[action])
                     child = Node(parent=node, prior=prior, action=action)
                     node.children[action] = child
-            node.value_sum = float(value)
 
     def _batch_expand_generic(self, leaf_infos, roots, network, device):
         """Batch-expand arbitrary leaf nodes and backup values."""
