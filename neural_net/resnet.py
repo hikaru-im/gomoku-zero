@@ -109,9 +109,9 @@ class ResNetGomoku(nn.Module):
         logits, value = self.forward(states)
         value = value.squeeze(-1)
 
+        # Cross-entropy with soft targets (probability distributions)
         log_p = F.log_softmax(logits, dim=-1)
-        log_q = target_policies.clamp(min=1e-10).log()
-        policy_loss = F.kl_div(log_p, log_q, reduction='batchmean')
+        policy_loss = -(target_policies * log_p).sum(dim=-1).mean()
         value_loss = F.mse_loss(value, target_values)
 
         # L2 regularization on weights (exclude BN params)
