@@ -72,7 +72,7 @@ void Board::init_masks() {
                     if (d == 0) { sx = x + k; sy = y; }           // H: step right
                     else if (d == 1) { sx = x; sy = y + k; }      // V: step down
                     else if (d == 2) { sx = x + k; sy = y + k; }  // D1: SE
-                    else { sx = x + k; sy = y - k; }              // D2: NE (step=14 means row decreases)
+                    else { sx = x - k; sy = y + k; }              // D2: step=14 goes SW (dx=-1,dy=+1)
 
                     if (sx >= 0 && sx < BOARD_SIZE && sy >= 0 && sy < BOARD_SIZE)
                         s_can_shr[d][k].set(idx);
@@ -159,6 +159,10 @@ bool Board::has_five(const Bitset225& stones) const {
 bool Board::has_exactly_five(const Bitset225& stones) const {
     // Find positions where there are 5+ in a row, then verify no 6th stone
     int steps[] = {STEP_H, STEP_V, STEP_D1, STEP_D2};
+    // Direction vectors for each step (the direction of idx + step)
+    int dx[] = {1, 0, 1, -1};   // H:right, V:down, D1:SE, D2:SW
+    int dy[] = {0, 1, 1, 1};
+
     for (int d = 0; d < 4; d++) {
         Bitset225 a = stones;
         for (int k = 1; k <= 4; k++) {
@@ -169,13 +173,17 @@ bool Board::has_exactly_five(const Bitset225& stones) const {
         if (a.any()) {
             for (int idx = 0; idx < BOARD_CELLS; idx++) {
                 if (!a.test(idx)) continue;
-                // Found a 5-in-a-row starting at idx in direction d
-                // Check: is there a 6th stone before or after?
-                int step = steps[d];
-                int before = idx - step;
-                int after = idx + 5 * step;
-                bool has_before = (before >= 0 && stones.test(before));
-                bool has_after = (after < BOARD_CELLS && stones.test(after));
+                int sx = idx % BOARD_SIZE;
+                int sy = idx / BOARD_SIZE;
+                // Check 6th stone before start and after end using coordinates
+                int bx = sx - dx[d], by = sy - dy[d];
+                bool has_before = (bx >= 0 && bx < BOARD_SIZE &&
+                                   by >= 0 && by < BOARD_SIZE &&
+                                   stones.test(by * BOARD_SIZE + bx));
+                int ax = sx + 5 * dx[d], ay = sy + 5 * dy[d];
+                bool has_after = (ax >= 0 && ax < BOARD_SIZE &&
+                                  ay >= 0 && ay < BOARD_SIZE &&
+                                  stones.test(ay * BOARD_SIZE + ax));
                 if (!has_before && !has_after) return true;
             }
         }
