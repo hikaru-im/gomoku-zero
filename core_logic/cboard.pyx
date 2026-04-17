@@ -1,4 +1,5 @@
 # cython: language_level=3, boundscheck=False, wraparound=False, cdivision=True
+# distutils: define_macros=NPY_NO_DEPRECATED_API=NPY_1_7_API_VERSION
 
 import numpy as np
 cimport numpy as np
@@ -15,6 +16,7 @@ cdef extern from "bitboard.h":
         void remove_stone(int x, int y)
         void undo()
         void reset()
+        void copy_from(const Board& other)
         bool is_empty(int x, int y)
         bool is_black(int x, int y)
         bool is_white(int x, int y)
@@ -41,14 +43,7 @@ cdef class PyBoard:
 
     def copy(self):
         cdef PyBoard b = PyBoard()
-        cdef int x, y, s
-        b._board.reset()
-        for y in range(15):
-            for x in range(15):
-                s = self._board.stone_at(x, y)
-                if s != 0:
-                    b._board.set_stone(x, y, s)
-        b._board.set_current_player(self._board.current_player())
+        b._board.copy_from(deref(self._board))
         return b
 
     def reset(self):
@@ -93,8 +88,8 @@ cdef class PyBoard:
     def legal_moves(self):
         cdef vector[pair[int,int]] moves = self._board.get_legal_moves()
         cdef list result = []
-        cdef int i
-        for i in range(moves.size()):
+        cdef Py_ssize_t i, n = moves.size()
+        for i in range(n):
             result.append((moves[i].first, moves[i].second))
         return result
 
@@ -114,8 +109,8 @@ cdef class PyBoard:
     def get_legal_moves_mask(self):
         cdef np.ndarray[np.uint8_t, ndim=2] mask = np.zeros((15, 15), dtype=np.uint8)
         cdef vector[pair[int,int]] moves = self._board.get_legal_moves()
-        cdef int i
-        for i in range(moves.size()):
+        cdef Py_ssize_t i, n = moves.size()
+        for i in range(n):
             mask[moves[i].second, moves[i].first] = 1
         return mask
 

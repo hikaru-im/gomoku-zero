@@ -2,8 +2,6 @@ import math
 import numpy as np
 import torch
 
-from core_logic.cboard import PyBoard
-
 
 class Node:
     """MCTS tree node with virtual-loss support for parallel simulation."""
@@ -91,7 +89,7 @@ class MCTSBatch:
                 sim_board.play_move(x, y, sim_board.current_player)
                 path.append(node)
 
-            # Expansion + evaluation (batched later if possible, but single sim here)
+            # Expansion + evaluation
             if sim_board.is_full() or sim_board.check_win(1) or sim_board.check_win(2):
                 # Terminal node
                 if sim_board.check_win(1):
@@ -101,8 +99,7 @@ class MCTSBatch:
                 else:
                     value = 0.0
             else:
-                self._expand_leaf(node, sim_board, network, device)
-                value = node.q_value if node.visit_count > 0 else 0.0
+                value = self._expand_leaf(node, sim_board, network, device)
 
             # Backup
             for visited_node in reversed(path):
@@ -139,6 +136,11 @@ class MCTSBatch:
 
         if unexpanded:
             self._batch_expand(roots, boards, unexpanded, network, device)
+
+        # Track root values for initial expansion
+        root_values = [0.0] * n
+        for i in unexpanded:
+            root_values[i] = roots[i].q_value
 
         for sim in range(self.num_simulations):
             # Collect leaf nodes to evaluate in batch
@@ -204,13 +206,13 @@ class MCTSBatch:
         return best_action, best_child
 
     def _expand_leaf(self, node, board, network, device):
-        """Expand a leaf node with network evaluation."""
+        """Expand a leaf node with network evaluation. Returns the predicted value."""
         state = board.get_state()  # (3, 15, 15)
         state_tensor = torch.from_numpy(state).unsqueeze(0).to(device)
 
         log_probs, value = network.predict(state_tensor)
         log_probs_np = log_probs.cpu().numpy()[0]
-        value_np = value.cpu().numpy()[0]
+        value_np = float(value.cpu().numpy()[0])
 
         # Get legal move mask
         legal_mask = board.get_legal_moves_mask()  # (15, 15) uint8
@@ -225,7 +227,8 @@ class MCTSBatch:
 
         # Initialize node value
         node.visit_count = 0
-        node.value_sum = float(value_np)
+        node.value_sum = value_np
+        return value_np
 
     def _add_dirichlet_noise(self, root):
         """Add Dirichlet noise to root children priors."""

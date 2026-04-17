@@ -3,7 +3,6 @@
 
 #include <cstdint>
 #include <vector>
-#include <string>
 
 static constexpr int BOARD_SIZE = 15;
 static constexpr int BOARD_CELLS = 225;
@@ -80,6 +79,7 @@ public:
     void remove_stone(int x, int y);
     void undo();
     void reset();
+    void copy_from(const Board& other);
 
     // --- Queries ---
     inline bool is_empty(int x, int y) const {
@@ -125,8 +125,9 @@ private:
     static void init_masks();
 
     // --- Win detection (bitwise) ---
-    bool has_five(const Bitset225& stones) const;  // exactly 5-in-a-row (for black: 5 only)
-    bool has_five_plus(const Bitset225& stones) const; // 5+ in a row (for white)
+    bool has_five(const Bitset225& stones) const;           // >= 5 in a row
+    bool has_exactly_five(const Bitset225& stones) const;    // exactly 5 (no overline)
+    bool has_five_plus(const Bitset225& stones) const;       // 5+ in a row (for white)
 
     // --- Forbidden helpers ---
     bool has_overline_at(int x, int y);   // 6+ in a row at (x,y) after placing black

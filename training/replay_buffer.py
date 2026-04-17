@@ -1,5 +1,6 @@
 import random
 import threading
+from collections import deque
 import numpy as np
 
 
@@ -12,7 +13,7 @@ class ReplayBuffer:
 
     def __init__(self, maxlen=500000):
         self.maxlen = maxlen
-        self.buffer = []  # flat list of (state, policy, value)
+        self.buffer = deque(maxlen=maxlen)
         self._lock = threading.Lock()
 
     @property
@@ -28,10 +29,6 @@ class ReplayBuffer:
         with self._lock:
             for state, policy, z in game_data:
                 self.buffer.append((state.copy(), policy.copy(), z))
-            # Trim to maxlen (FIFO)
-            if len(self.buffer) > self.maxlen:
-                excess = len(self.buffer) - self.maxlen
-                self.buffer = self.buffer[excess:]
 
     def sample(self, batch_size, symmetry=True):
         """Sample a batch with optional random symmetry augmentation.
@@ -46,7 +43,7 @@ class ReplayBuffer:
             values: (batch,) float32
         """
         with self._lock:
-            batch = random.sample(self.buffer, min(batch_size, len(self.buffer)))
+            batch = list(random.sample(self.buffer, min(batch_size, len(self.buffer))))
 
         states = np.zeros((len(batch), 3, 15, 15), dtype=np.float32)
         policies = np.zeros((len(batch), 225), dtype=np.float32)

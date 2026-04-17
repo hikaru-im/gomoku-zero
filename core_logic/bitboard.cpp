@@ -21,7 +21,7 @@ Bitset225 Bitset225::shr(int n) const {
             int bit_off  = n & 63;
             if (src_word < BB_WORDS) {
                 r.w[i] = w[src_word] >> bit_off;
-                if (src_word + 1 < BB_WORDS)
+                if (bit_off > 0 && src_word + 1 < BB_WORDS)
                     r.w[i] |= (w[src_word + 1] << (64 - bit_off));
             }
         }
@@ -61,7 +61,6 @@ void Board::init_masks() {
                 for (int i = 0; i < BOARD_CELLS; i++) s_can_shr[d][0].set(i);
                 continue;
             }
-            int step = steps[d];
             s_can_shr[d][k] = Bitset225(); // zero
             for (int y = 0; y < BOARD_SIZE; y++) {
                 for (int x = 0; x < BOARD_SIZE; x++) {
@@ -103,6 +102,13 @@ void Board::reset() {
     move_history_.clear();
 }
 
+void Board::copy_from(const Board& other) {
+    black_ = other.black_;
+    white_ = other.white_;
+    current_player_ = other.current_player_;
+    move_history_ = other.move_history_;
+}
+
 // ─── Stone management ───
 
 void Board::set_stone(int x, int y, int player) {
@@ -141,7 +147,6 @@ bool Board::is_full() const {
 // ─── Win detection (bitwise) ───
 
 bool Board::has_five(const Bitset225& stones) const {
-    // Check 5-in-a-row in all 4 directions
     int steps[] = {STEP_H, STEP_V, STEP_D1, STEP_D2};
     for (int d = 0; d < 4; d++) {
         Bitset225 a = stones;
@@ -154,6 +159,33 @@ bool Board::has_five(const Bitset225& stones) const {
     return false;
 }
 
+bool Board::has_exactly_five(const Bitset225& stones) const {
+    // Find positions where there are 5+ in a row, then verify no 6th stone
+    int steps[] = {STEP_H, STEP_V, STEP_D1, STEP_D2};
+    for (int d = 0; d < 4; d++) {
+        Bitset225 a = stones;
+        for (int k = 1; k <= 4; k++) {
+            Bitset225 shifted = stones & s_can_shr[d][k];
+            a = a & shifted.shr(steps[d] * k);
+        }
+        // For each candidate 5-in-a-row position, check for 6th stone
+        if (a.any()) {
+            for (int idx = 0; idx < BOARD_CELLS; idx++) {
+                if (!a.test(idx)) continue;
+                // Found a 5-in-a-row starting at idx in direction d
+                // Check: is there a 6th stone before or after?
+                int step = steps[d];
+                int before = idx - step;
+                int after = idx + 5 * step;
+                bool has_before = (before >= 0 && stones.test(before));
+                bool has_after = (after < BOARD_CELLS && stones.test(after));
+                if (!has_before && !has_after) return true;
+            }
+        }
+    }
+    return false;
+}
+
 bool Board::has_five_plus(const Bitset225& stones) const {
     // For white: 5 or more in a row is a win
     // Check 5-in-a-row (which already implies >= 5 since we AND 5 aligned positions)
@@ -162,12 +194,11 @@ bool Board::has_five_plus(const Bitset225& stones) const {
 
 bool Board::check_win(int player) const {
     if (player == 1) {
-        // Black wins with exactly 5. But if we enforce forbidden moves properly,
-        // any 5+ is fine to detect as a win (6+ should never occur).
-        return has_five(black_);
+        // Black wins with exactly 5 (overline = forbidden, not a win)
+        return has_exactly_five(black_);
     } else {
         // White wins with 5 or more
-        return has_five_plus(white_);
+        return has_five(white_);
     }
 }
 
@@ -176,11 +207,12 @@ bool Board::check_win(int player) const {
 std::vector<std::pair<int,int>> Board::get_legal_moves() {
     std::vector<std::pair<int,int>> moves;
     Bitset225 occupied = black_ | white_;
+    bool check_forbidden = (current_player_ == 1 && black_.count() >= 3);
     for (int y = 0; y < BOARD_SIZE; y++) {
         for (int x = 0; x < BOARD_SIZE; x++) {
             int idx = y * BOARD_SIZE + x;
             if (!occupied.test(idx)) {
-                if (current_player_ == 1 && is_forbidden(x, y))
+                if (check_forbidden && is_forbidden(x, y))
                     continue;
                 moves.push_back({x, y});
             }
@@ -258,7 +290,6 @@ int Board::count_open_threes(int x, int y) {
         // We need 5 cells on each side to check open-three patterns
         int line[11];
         int cx = x - 5*dx, cy = y - 5*dy;
-        bool valid = true;
         for (int i = 0; i < 11; i++) {
             if (cx >= 0 && cx < BOARD_SIZE && cy >= 0 && cy < BOARD_SIZE) {
                 line[i] = stone_at(cx, cy);
@@ -292,11 +323,6 @@ int Board::count_open_threes(int x, int y) {
 
             // Need exactly 3 black, 2 empty in the window
             if (blacks != 3 || empties != 2) continue;
-
-            // Both ends of the 5-window must be empty (for it to be "open")
-            // But also check the cells just outside the window
-            int left_of = (start > 0) ? line[start - 1] : 2;
-            int right_of = (start + 5 < 11) ? line[start + 5] : 2;
 
             // At minimum, the 5-window has both endpoints empty
             if (line[start] != 0 || line[start + 4] != 0) continue;

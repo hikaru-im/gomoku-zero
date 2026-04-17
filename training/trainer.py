@@ -35,6 +35,7 @@ class GomokuTrainer:
         eval_win_rate=0.55,
         temperature_threshold=30,
         device="cuda" if torch.cuda.is_available() else "cpu",
+        max_iterations=1000,
     ):
         self.checkpoint_dir = checkpoint_dir
         os.makedirs(checkpoint_dir, exist_ok=True)
@@ -51,7 +52,6 @@ class GomokuTrainer:
             momentum=momentum,
             weight_decay=weight_decay,
         )
-        self.lr = lr
 
         # Training hyperparams
         self.batch_size = batch_size
@@ -66,8 +66,8 @@ class GomokuTrainer:
         self.buffer = ReplayBuffer(maxlen=buffer_size)
 
         # LR scheduler
-        self.scheduler = optim.lr_scheduler.MultiStepLR(
-            self.optimizer, milestones=[100, 200, 300, 400], gamma=0.1
+        self.scheduler = optim.lr_scheduler.CosineAnnealingLR(
+            self.optimizer, T_max=max_iterations, eta_min=lr * 0.01
         )
 
         # Iteration counter

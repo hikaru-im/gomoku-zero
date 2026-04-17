@@ -27,6 +27,7 @@ def play_one_game(network, device="cpu", num_simulations=400,
     game_data = []
     move_count = 0
     resign_counter = 0
+    last_player = 0
 
     while True:
         state = board.get_state()  # (3, 15, 15)
@@ -68,8 +69,11 @@ def play_one_game(network, device="cpu", num_simulations=400,
                           policy.astype(np.float32),
                           player))
 
-        # Check resignation (based on MCTS root value)
+        # Check resignation (based on MCTS root value from current player's perspective)
         root_value = root.q_value if root.visit_count > 0 else 0.0
+        if player != last_player:
+            resign_counter = 0
+            last_player = player
         if root_value < resign_threshold:
             resign_counter += 1
         else:
