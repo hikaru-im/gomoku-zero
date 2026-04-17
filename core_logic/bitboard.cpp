@@ -173,7 +173,7 @@ bool Board::check_win(int player) const {
 
 // ─── Legal moves ───
 
-std::vector<std::pair<int,int>> Board::get_legal_moves() const {
+std::vector<std::pair<int,int>> Board::get_legal_moves() {
     std::vector<std::pair<int,int>> moves;
     Bitset225 occupied = black_ | white_;
     for (int y = 0; y < BOARD_SIZE; y++) {
@@ -210,7 +210,7 @@ void Board::extract_line(int x, int y, int dx, int dy,
 
 // ─── Overline detection ───
 
-bool Board::has_overline_at(int x, int y) const {
+bool Board::has_overline_at(int x, int y) {
     // Temporarily place black at (x,y) and check for 6+ in a row
     int idx = y * BOARD_SIZE + x;
     black_.set(idx);
@@ -244,7 +244,7 @@ bool Board::has_overline_at(int x, int y) const {
 
 // ─── Count open threes at (x,y) ───
 
-int Board::count_open_threes(int x, int y) const {
+int Board::count_open_threes(int x, int y) {
     // Place black temporarily
     int idx = y * BOARD_SIZE + x;
     black_.set(idx);
@@ -336,7 +336,7 @@ int Board::count_open_threes(int x, int y) const {
 
 // ─── Count fours at (x,y) ───
 
-int Board::count_fours(int x, int y) const {
+int Board::count_fours(int x, int y) {
     int idx = y * BOARD_SIZE + x;
     black_.set(idx);
     int four_count = 0;
@@ -428,7 +428,7 @@ int Board::count_fours(int x, int y) const {
 
 // ─── Combined forbidden check ───
 
-bool Board::is_forbidden(int x, int y) const {
+bool Board::is_forbidden(int x, int y) {
     // Only black has forbidden moves
     if (current_player_ != 1) return false;
     // Must be empty

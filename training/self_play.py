@@ -1,6 +1,6 @@
 import torch
 import numpy as np
-from cboard import PyBoard
+from core_logic.cboard import PyBoard
 from search.mcts_batch import MCTSBatch, Node
 
 

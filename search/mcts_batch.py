@@ -2,7 +2,7 @@ import math
 import numpy as np
 import torch
 
-from cboard import PyBoard
+from core_logic.cboard import PyBoard
 
 
 class Node:

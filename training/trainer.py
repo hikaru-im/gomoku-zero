@@ -280,7 +280,7 @@ class GomokuTrainer:
         Returns: 1 if new wins, -1 if old wins, 0 for draw.
         """
         from search.mcts_batch import MCTSBatch, Node
-        from cboard import PyBoard
+        from core_logic.cboard import PyBoard
 
         board = PyBoard()
         move_count = 0

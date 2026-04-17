@@ -97,10 +97,10 @@ public:
     int  num_stones() const { return (int)move_history_.size(); }
 
     // --- Legal moves (forbidden-filtered for black) ---
-    std::vector<std::pair<int,int>> get_legal_moves() const;
+    std::vector<std::pair<int,int>> get_legal_moves();
 
     // --- Forbidden-move detection (black only) ---
-    bool is_forbidden(int x, int y) const;
+    bool is_forbidden(int x, int y);
 
     // --- State export for neural net ---
     // Output: [3][225] float32 — current player stones, opponent stones, color-to-move plane
@@ -129,9 +129,9 @@ private:
     bool has_five_plus(const Bitset225& stones) const; // 5+ in a row (for white)
 
     // --- Forbidden helpers ---
-    bool has_overline_at(int x, int y) const;   // 6+ in a row at (x,y) after placing black
-    int  count_open_threes(int x, int y) const;  // number of open-3 lines created
-    int  count_fours(int x, int y) const;        // number of four lines created
+    bool has_overline_at(int x, int y);   // 6+ in a row at (x,y) after placing black
+    int  count_open_threes(int x, int y);  // number of open-3 lines created
+    int  count_fours(int x, int y);        // number of four lines created
 
     // Line extraction: fill cells[] with stone states along direction through (x,y)
     // 0=empty, 1=black, 2=white.  len is number of valid cells (up to 15)

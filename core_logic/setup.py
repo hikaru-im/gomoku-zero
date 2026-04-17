@@ -4,11 +4,10 @@ import numpy as np
 
 extensions = [
     Extension(
-        name="cboard",
-        sources=["cboard.pyx", "bitboard.cpp"],
+        name="core_logic.cboard",
+        sources=["core_logic/cboard.pyx", "core_logic/bitboard.cpp"],
         language="c++",
-        extra_compile_args=["-O3", "-std=c++17", "-fopenmp"],
-        extra_link_args=["-fopenmp"],
+        extra_compile_args=["-O3", "-std=c++17"],
         include_dirs=[np.get_include(), "."],
     )
 ]
