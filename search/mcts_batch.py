@@ -135,11 +135,14 @@ class MCTSBatch:
         for i, (root, board) in enumerate(zip(roots, boards)):
             if not root.is_expanded:
                 unexpanded.append(i)
-            if add_noise:
-                self._add_dirichlet_noise(root)
 
         if unexpanded:
             self._batch_expand(roots, boards, unexpanded, network, device)
+
+        # Apply Dirichlet noise AFTER expansion (needs children to exist)
+        if add_noise:
+            for root in roots:
+                self._add_dirichlet_noise(root)
 
         # Track root values for initial expansion
         root_values = [0.0] * n
@@ -196,8 +199,11 @@ class MCTSBatch:
 
         for action, child in node.children.items():
             if child.visit_count == 0 and child.virtual_loss == 0:
-                # Unvisited — prioritize
-                u = self.c_puct * child.prior * sqrt_parent_visits
+                # Unvisited — prioritize by prior
+                if sqrt_parent_visits > 0:
+                    u = self.c_puct * child.prior * sqrt_parent_visits
+                else:
+                    u = child.prior  # first simulation: select by prior directly
             else:
                 q = child.q_value
                 u = q + self.c_puct * child.prior * sqrt_parent_visits / (

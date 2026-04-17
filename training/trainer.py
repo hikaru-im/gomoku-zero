@@ -236,13 +236,20 @@ class GomokuTrainer:
 
         for g in range(self.eval_games):
             try:
+                # Alternate colors to eliminate first-move bias
+                swap = (g % 2 == 1)
                 result = self._eval_game(
-                    self.network, best_net,
+                    self.network if not swap else best_net,
+                    best_net if not swap else self.network,
                     num_simulations=eval_sims,
+                    new_net_is_black=(not swap),
                 )
-                if result == 1: wins += 1
-                elif result == -1: losses += 1
-                else: draws += 1
+                if result == 1:
+                    wins += 1
+                elif result == -1:
+                    losses += 1
+                else:
+                    draws += 1
             except Exception as e:
                 draws += 1
                 continue
@@ -273,10 +280,10 @@ class GomokuTrainer:
 
         return win_rate
 
-    def _eval_game(self, new_net, old_net, num_simulations=200):
+    def _eval_game(self, black_net, white_net, num_simulations=200,
+                   new_net_is_black=True):
         """Play one evaluation game between new and old networks.
 
-        new_net plays as black, old_net plays as white.
         Returns: 1 if new wins, -1 if old wins, 0 for draw.
         """
         from search.mcts_batch import MCTSBatch, Node
@@ -284,7 +291,7 @@ class GomokuTrainer:
 
         board = PyBoard()
         move_count = 0
-        nets = [new_net, old_net]  # index 0=black(new), 1=white(old)
+        nets = [black_net, white_net]  # index 0=black, 1=white
 
         while True:
             player_idx = board.current_player - 1  # 0 or 1
@@ -309,7 +316,9 @@ class GomokuTrainer:
             # Check winner
             last_player = 1 if board.current_player == 2 else 2
             if board.check_win(last_player):
-                return 1 if last_player == 1 else -1  # 1=new(black) wins, -1=old(white) wins
+                winner_is_new = (new_net_is_black and last_player == 1) or \
+                                (not new_net_is_black and last_player == 2)
+                return 1 if winner_is_new else -1
 
             if board.is_full():
                 return 0
