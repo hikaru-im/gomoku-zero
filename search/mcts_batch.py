@@ -101,7 +101,8 @@ class MCTSBatch:
             else:
                 value = self._expand_leaf(node, sim_board, network, device)
 
-            # Backup
+            # Backup — include the leaf node itself so it gets visit_count updated
+            path.append(node)
             for visited_node in reversed(path):
                 visited_node.virtual_loss -= 1
                 visited_node.visit_count += 1
@@ -164,7 +165,8 @@ class MCTSBatch:
                         value = 1.0 if sim_board.current_player == 1 else -1.0
                     else:
                         value = 0.0
-                    # Backup immediately
+                    # Backup immediately — include the terminal node itself
+                    path.append(node)
                     for visited_node in reversed(path):
                         visited_node.virtual_loss -= 1
                         visited_node.visit_count += 1
@@ -292,7 +294,8 @@ class MCTSBatch:
 
             node.value_sum = float(value)
 
-            # Backup
+            # Backup — include the leaf node itself
+            path.append(node)
             v = float(value)
             for visited_node in reversed(path):
                 visited_node.virtual_loss -= 1

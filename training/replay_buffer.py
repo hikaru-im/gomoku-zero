@@ -50,7 +50,7 @@ class ReplayBuffer:
         values = np.zeros(len(batch), dtype=np.float32)
 
         for i, (s, p, v) in enumerate(batch):
-            if symmetry and random.random() < 0.5:
+            if symmetry:
                 t = random.randint(0, 7)
                 states[i] = _apply_symmetry_state(s, t)
                 policies[i] = _apply_symmetry_policy(p, t)
