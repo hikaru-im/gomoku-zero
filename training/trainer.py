@@ -45,13 +45,14 @@ class GomokuTrainer:
         self.network = ResNetGomoku(num_blocks=num_blocks, num_filters=num_filters).to(device)
         self.network.eval()
 
-        # Optimizer
-        self.optimizer = optim.SGD(
-            self.network.parameters(),
-            lr=lr,
-            momentum=momentum,
-            weight_decay=weight_decay,
-        )
+        # Store hyperparams for optimizer rebuild
+        self.lr = lr
+        self.momentum = momentum
+        self.weight_decay = weight_decay
+        self.max_iterations = max_iterations
+
+        # Optimizer + scheduler
+        self._build_optimizer()
 
         # Training hyperparams
         self.batch_size = batch_size
@@ -65,14 +66,21 @@ class GomokuTrainer:
         # Replay buffer
         self.buffer = ReplayBuffer(maxlen=buffer_size)
 
-        # LR scheduler
-        self.scheduler = optim.lr_scheduler.CosineAnnealingLR(
-            self.optimizer, T_max=max_iterations, eta_min=lr * 0.01
-        )
-
         # Iteration counter
         self.iteration = 0
         self.best_iteration = 0
+
+    def _build_optimizer(self):
+        """Create optimizer and scheduler. Called on init and after revert."""
+        self.optimizer = optim.SGD(
+            self.network.parameters(),
+            lr=self.lr,
+            momentum=self.momentum,
+            weight_decay=self.weight_decay,
+        )
+        self.scheduler = optim.lr_scheduler.CosineAnnealingLR(
+            self.optimizer, T_max=self.max_iterations, eta_min=self.lr * 0.01
+        )
 
     def _save_checkpoint(self, network, path):
         network.save_checkpoint(path)
@@ -274,8 +282,9 @@ class GomokuTrainer:
             self.best_iteration = self.iteration
             print(f"  ** New best model! win_rate={win_rate:.3f} **")
         else:
-            # Revert to best model
+            # Revert to best model and reset optimizer + scheduler
             self._load_checkpoint(os.path.join(self.checkpoint_dir, "best_model.pt"))
+            self._build_optimizer()
             print(f"  Did not improve (wr={win_rate:.3f}), reverting to best model")
 
         return win_rate
