@@ -2,6 +2,7 @@ import random
 import threading
 from collections import deque
 import numpy as np
+import torch
 
 
 class ReplayBuffer:
@@ -60,6 +61,20 @@ class ReplayBuffer:
             values[i] = v
 
         return states, policies, values
+
+    def save(self, path):
+        """Serialize buffer to a file."""
+        with self._lock:
+            torch.save(list(self.buffer), path)
+
+    def load(self, path):
+        """Load buffer from a file, replacing current contents."""
+        data = torch.load(path, map_location="cpu")
+        with self._lock:
+            self.buffer.clear()
+            if data:
+                for state, policy, z in data:
+                    self.buffer.append((state, policy, z))
 
 
 # ─── D4 symmetry transforms ───

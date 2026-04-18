@@ -134,7 +134,6 @@ private:
     bool would_be_exactly_five(int px, int py);   // placing black at (px,py) creates exactly five
     bool would_be_exactly_five_in_dir(int px, int py, int dx, int dy);
     int  count_fours(int x, int y);                // number of four lines created (strict Renju)
-    bool is_forbidden_no_three(int px, int py);    // forbidden check without double-three
     int  count_live_threes(int x, int y);          // number of live-3 lines (strict Renju)
 
     // Line extraction: fill cells[] with stone states along direction through (x,y)

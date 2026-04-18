@@ -50,7 +50,14 @@ cdef class PyBoard:
         self._board.reset()
 
     def play_move(self, int x, int y, int player):
+        if x < 0 or x >= 15 or y < 0 or y >= 15:
+            return False
+        if not self._board.is_empty(x, y):
+            return False
+        if player != self._board.current_player():
+            return False
         self._board.set_stone(x, y, player)
+        return True
 
     def undo_move(self):
         self._board.undo()

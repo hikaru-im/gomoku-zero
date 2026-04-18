@@ -88,14 +88,20 @@ class MCTSBatch:
                 path.append(node)
 
             # Expansion + evaluation
-            if sim_board.is_full() or sim_board.check_win(1) or sim_board.check_win(2):
-                # Terminal node
+            no_legal = len(sim_board.legal_moves()) == 0
+            if sim_board.is_full() or sim_board.check_win(1) or sim_board.check_win(2) or no_legal:
+                # Terminal node — value from current player's (side-to-move) perspective
                 if sim_board.check_win(1):
-                    value = 1.0 if sim_board.current_player == 2 else -1.0
-                elif sim_board.check_win(2):
+                    # Black won. current_player is white (black just moved) → current player lost.
                     value = 1.0 if sim_board.current_player == 1 else -1.0
+                elif sim_board.check_win(2):
+                    # White won. current_player is black (white just moved) → current player lost.
+                    value = 1.0 if sim_board.current_player == 2 else -1.0
+                elif no_legal:
+                    # No legal moves but board not full — current player cannot move → loses
+                    value = -1.0
                 else:
-                    value = 0.0
+                    value = 0.0  # draw (board full)
             else:
                 value = self._expand_leaf(node, sim_board, network, device)
 
@@ -156,14 +162,19 @@ class MCTSBatch:
                     sim_board.play_move(x, y, sim_board.current_player)
                     path.append(node)
 
-                # Check terminal
-                if sim_board.is_full() or sim_board.check_win(1) or sim_board.check_win(2):
+                # Check terminal — value from current player's (side-to-move) perspective
+                no_legal = len(sim_board.legal_moves()) == 0
+                if sim_board.is_full() or sim_board.check_win(1) or sim_board.check_win(2) or no_legal:
                     if sim_board.check_win(1):
-                        value = 1.0 if sim_board.current_player == 2 else -1.0
-                    elif sim_board.check_win(2):
+                        # Black won. current_player is white → current player lost.
                         value = 1.0 if sim_board.current_player == 1 else -1.0
+                    elif sim_board.check_win(2):
+                        # White won. current_player is black → current player lost.
+                        value = 1.0 if sim_board.current_player == 2 else -1.0
+                    elif no_legal:
+                        value = -1.0  # current player cannot move → loses
                     else:
-                        value = 0.0
+                        value = 0.0  # draw (board full)
                     # Backup — walk from leaf up, then update root
                     for visited_node in reversed(path):
                         visited_node.virtual_loss -= 1
@@ -224,11 +235,18 @@ class MCTSBatch:
         legal_mask = board.get_legal_moves_mask()  # (15, 15) uint8
         legal_flat = legal_mask.flatten()  # (225,)
 
-        # Create children for legal moves
+        # Stable softmax over legal moves only (subtract max to prevent underflow)
+        legal_indices = np.where(legal_flat)[0]
+        priors = np.zeros(225, dtype=np.float64)
+        if len(legal_indices) > 0:
+            legal_logits = log_probs_np[legal_indices]
+            legal_logits -= legal_logits.max()  # shift for stability
+            exp_vals = np.exp(legal_logits)
+            priors[legal_indices] = exp_vals / exp_vals.sum()
+
         for action in range(225):
-            if legal_flat[action]:
-                prior = math.exp(log_probs_np[action])
-                child = Node(parent=node, prior=prior, action=action)
+            if priors[action] > 0:
+                child = Node(parent=node, prior=float(priors[action]), action=action)
                 node.children[action] = child
 
         return value_np
@@ -263,10 +281,16 @@ class MCTSBatch:
             value = values_np[idx_pos]
 
             legal_mask = board.get_legal_moves_mask().flatten()
+            legal_idx = np.where(legal_mask)[0]
+            priors = np.zeros(225, dtype=np.float64)
+            if len(legal_idx) > 0:
+                legal_lps = log_probs[legal_idx]
+                legal_lps -= legal_lps.max()
+                ev = np.exp(legal_lps)
+                priors[legal_idx] = ev / ev.sum()
             for action in range(225):
-                if legal_mask[action]:
-                    prior = math.exp(log_probs[action])
-                    child = Node(parent=node, prior=prior, action=action)
+                if priors[action] > 0:
+                    child = Node(parent=node, prior=float(priors[action]), action=action)
                     node.children[action] = child
 
     def _batch_expand_generic(self, leaf_infos, roots, network, device):
@@ -286,10 +310,16 @@ class MCTSBatch:
             value = float(values_np[idx_pos])
 
             legal_mask = sim_board.get_legal_moves_mask().flatten()
+            legal_idx = np.where(legal_mask)[0]
+            priors = np.zeros(225, dtype=np.float64)
+            if len(legal_idx) > 0:
+                legal_lps = log_probs[legal_idx]
+                legal_lps -= legal_lps.max()
+                ev = np.exp(legal_lps)
+                priors[legal_idx] = ev / ev.sum()
             for action in range(225):
-                if legal_mask[action]:
-                    prior = math.exp(log_probs[action])
-                    child = Node(parent=node, prior=prior, action=action)
+                if priors[action] > 0:
+                    child = Node(parent=node, prior=float(priors[action]), action=action)
                     node.children[action] = child
 
             # Backup — walk from leaf up, then update root
@@ -306,6 +336,11 @@ class MCTSBatch:
     def _get_visit_probs(self, root, temperature=1.0):
         """Get action probabilities from visit counts with temperature."""
         actions = list(root.children.keys())
+        if not actions:
+            # No legal moves — should not happen if terminal check is correct,
+            # but return uniform as safety net.
+            return np.ones(225, dtype=np.float64) / 225.0
+
         visits = np.array([root.children[a].visit_count for a in actions], dtype=np.float64)
 
         if temperature == 0:

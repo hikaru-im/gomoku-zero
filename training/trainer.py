@@ -1,6 +1,5 @@
 import os
 import time
-import math
 import torch
 import torch.optim as optim
 import numpy as np
@@ -52,7 +51,15 @@ class GomokuTrainer:
         self.max_iterations = max_iterations
 
         # Optimizer + scheduler
-        self._build_optimizer()
+        self.optimizer = optim.SGD(
+            self.network.parameters(),
+            lr=lr,
+            momentum=momentum,
+            weight_decay=weight_decay,
+        )
+        self.scheduler = optim.lr_scheduler.CosineAnnealingLR(
+            self.optimizer, T_max=max_iterations, eta_min=1e-6
+        )
 
         # Training hyperparams
         self.batch_size = batch_size
@@ -70,43 +77,78 @@ class GomokuTrainer:
         self.iteration = 0
         self.best_iteration = 0
 
-    def _build_optimizer(self):
-        """Create optimizer and scheduler. Called on init and after revert."""
+    def _save_checkpoint(self, path):
+        """Save full trainer state: model, optimizer, scheduler, iteration, buffer."""
+        torch.save({
+            "model_state_dict": self.network.state_dict(),
+            "optimizer_state_dict": self.optimizer.state_dict(),
+            "scheduler_state_dict": self.scheduler.state_dict(),
+            "iteration": self.iteration,
+            "num_blocks": self.network.num_blocks,
+            "num_filters": self.network.num_filters,
+        }, path)
+        # Save replay buffer separately (can be large)
+        buffer_path = path.replace(".pt", "_buffer.pt")
+        self.buffer.save(buffer_path)
+
+    def _rebuild_optimizer(self, scheduler_steps=None):
+        """Create fresh optimizer + scheduler (zero momentum), stepped to target position."""
         self.optimizer = optim.SGD(
             self.network.parameters(),
-            lr=self.lr,
-            momentum=self.momentum,
-            weight_decay=self.weight_decay,
+            lr=self.lr, momentum=self.momentum, weight_decay=self.weight_decay,
         )
         self.scheduler = optim.lr_scheduler.CosineAnnealingLR(
-            self.optimizer, T_max=self.max_iterations, eta_min=self.lr * 0.01
+            self.optimizer, T_max=self.max_iterations, eta_min=1e-6,
         )
-
-    def _save_checkpoint(self, network, path):
-        network.save_checkpoint(path)
+        # Works for both PyTorch 1.x (init: last_epoch=-1) and 2.x (init: last_epoch=0).
+        if scheduler_steps is None:
+            scheduler_steps = self.iteration
+        for _ in range(scheduler_steps):
+            self.scheduler.step()
 
     def _load_checkpoint(self, path):
-        return self.network.load_checkpoint(path, self.device)
+        """Full state restore (for resume). Backward-compatible with old model-only checkpoints."""
+        ckpt = torch.load(path, map_location=self.device)
+        self.network.load_state_dict(ckpt["model_state_dict"])
+        self.iteration = ckpt.get("iteration", 0)
+
+        if "optimizer_state_dict" in ckpt and "scheduler_state_dict" in ckpt:
+            self.optimizer.load_state_dict(ckpt["optimizer_state_dict"])
+            self.scheduler.load_state_dict(ckpt["scheduler_state_dict"])
+        else:
+            # Old-format checkpoint (model weights only): rebuild optimizer + scheduler
+            self._rebuild_optimizer()
+
+        # Restore replay buffer if available
+        buffer_path = path.replace(".pt", "_buffer.pt")
+        if os.path.exists(buffer_path):
+            self.buffer.load(buffer_path)
+            print(f"  Restored replay buffer: {self.buffer.size} entries")
+
+    def _load_model_weights(self, path):
+        """Restore only model weights (for revert). Keeps optimizer/scheduler/iteration."""
+        ckpt = torch.load(path, map_location=self.device)
+        self.network.load_state_dict(ckpt["model_state_dict"])
 
     def _latest_checkpoint(self):
-        """Find the latest best_model checkpoint."""
-        path = os.path.join(self.checkpoint_dir, "best_model.pt")
-        if os.path.exists(path):
-            return path
+        """Find the latest checkpoint for resume. Prefer latest.pt (crash recovery), fall back to best_model.pt."""
+        latest = os.path.join(self.checkpoint_dir, "latest.pt")
+        if os.path.exists(latest):
+            return latest
+        best = os.path.join(self.checkpoint_dir, "best_model.pt")
+        if os.path.exists(best):
+            return best
         return None
 
     def resume(self):
-        """Resume from the latest checkpoint."""
+        """Resume from the latest checkpoint with full state restore."""
         ckpt_path = self._latest_checkpoint()
         if ckpt_path:
             self._load_checkpoint(ckpt_path)
-            print(f"Resumed from {ckpt_path}")
-            # Try to load iteration number
-            iter_path = os.path.join(self.checkpoint_dir, "iteration.txt")
-            if os.path.exists(iter_path):
-                with open(iter_path, "r") as f:
-                    self.iteration = int(f.read().strip())
-                print(f"Resuming from iteration {self.iteration}")
+            # Checkpoint stores the last completed iteration.
+            # Advance by 1 so the loop starts at the next iteration.
+            self.iteration += 1
+            print(f"Resumed from {ckpt_path}, continuing at iteration {self.iteration}")
 
     def run(self, max_iterations=1000):
         """Main training loop."""
@@ -125,7 +167,7 @@ class GomokuTrainer:
 
             # Phase 2: Network training
             print(f"[Training] {self.training_steps} steps, buffer size: {self.buffer.size}")
-            train_loss = self._train_network()
+            train_loss, self._last_train_steps = self._train_network()
 
             # Phase 3: Evaluation
             print(f"[Eval] Playing {self.eval_games} evaluation games...")
@@ -135,9 +177,10 @@ class GomokuTrainer:
             print(f"[Iter {self.iteration}] loss={train_loss:.4f} "
                   f"win_rate={win_rate:.3f} time={elapsed:.1f}s")
 
-            # Save iteration counter
-            with open(os.path.join(self.checkpoint_dir, "iteration.txt"), "w") as f:
-                f.write(str(self.iteration + 1))
+            # Save training progress (for crash recovery, NOT best model)
+            self._save_checkpoint(
+                os.path.join(self.checkpoint_dir, "latest.pt")
+            )
 
     def _generate_self_play(self):
         """Run self-play games and store results in replay buffer."""
@@ -179,6 +222,7 @@ class GomokuTrainer:
 
         total_loss = 0.0
         steps_done = 0
+        accumulate_steps = 4
 
         for step in range(self.training_steps):
             if self.buffer.size < self.batch_size:
@@ -193,13 +237,14 @@ class GomokuTrainer:
 
             loss, p_loss, v_loss = self.network.loss(states_t, policies_t, values_t)
 
-            loss.backward()
+            # Scale loss by accumulation steps so effective learning rate is correct
+            (loss / accumulate_steps).backward()
 
             # Gradient clipping
             torch.nn.utils.clip_grad_norm_(self.network.parameters(), max_norm=1.0)
 
             # Accumulate gradients over multiple steps for stability
-            if (step + 1) % 4 == 0 or step == self.training_steps - 1:
+            if (step + 1) % accumulate_steps == 0 or step == self.training_steps - 1:
                 self.optimizer.step()
                 self.optimizer.zero_grad()
 
@@ -210,30 +255,33 @@ class GomokuTrainer:
                 avg = total_loss / steps_done
                 print(f"  Step {step+1}/{self.training_steps} avg_loss={avg:.4f}")
 
-        self.scheduler.step()
+        # Only advance LR schedule if training actually happened
+        if steps_done > 0:
+            self.scheduler.step()
         self.network.eval()
 
-        return total_loss / max(steps_done, 1)
+        avg_loss = total_loss / max(steps_done, 1)
+        return avg_loss, steps_done
 
     def _evaluate(self):
         """Evaluate current network against the best saved network."""
-        best_path = self._latest_checkpoint()
-        if best_path is None:
+        best_path = os.path.join(self.checkpoint_dir, "best_model.pt")
+        if not os.path.exists(best_path):
             # No previous checkpoint — auto-promote current network
             self._save_checkpoint(
-                self.network,
                 os.path.join(self.checkpoint_dir, "best_model.pt")
             )
             self.best_iteration = self.iteration
             print("  No previous checkpoint — saved as best model")
             return 1.0
 
-        # Load best model
+        # Load best model weights into a fresh network for evaluation
         best_net = ResNetGomoku(
             num_blocks=self.network.num_blocks,
             num_filters=self.network.num_filters,
         ).to(self.device)
-        best_net.load_checkpoint(best_path, self.device)
+        ckpt = torch.load(best_path, map_location=self.device)
+        best_net.load_state_dict(ckpt["model_state_dict"])
         best_net.eval()
 
         # Play evaluation games (new network vs best network)
@@ -270,21 +318,22 @@ class GomokuTrainer:
         total = wins + losses + draws
         win_rate = wins / total if total > 0 else 0
 
-        # Save current model
+        # Save current iteration model
         current_path = os.path.join(self.checkpoint_dir, f"model_iter_{self.iteration}.pt")
-        self._save_checkpoint(self.network, current_path)
+        self._save_checkpoint(current_path)
 
         if win_rate >= self.eval_win_rate:
             self._save_checkpoint(
-                self.network,
                 os.path.join(self.checkpoint_dir, "best_model.pt")
             )
             self.best_iteration = self.iteration
             print(f"  ** New best model! win_rate={win_rate:.3f} **")
         else:
-            # Revert to best model and reset optimizer + scheduler
-            self._load_checkpoint(os.path.join(self.checkpoint_dir, "best_model.pt"))
-            self._build_optimizer()
+            # Revert: restore model weights + rebuild optimizer (clear stale momentum).
+            # Only add +1 scheduler step if training actually happened this iteration.
+            self._load_model_weights(os.path.join(self.checkpoint_dir, "best_model.pt"))
+            extra = 1 if getattr(self, '_last_train_steps', 0) > 0 else 0
+            self._rebuild_optimizer(scheduler_steps=self.iteration + extra)
             print(f"  Did not improve (wr={win_rate:.3f}), reverting to best model")
 
         return win_rate
@@ -299,7 +348,6 @@ class GomokuTrainer:
         from core_logic.cboard import PyBoard
 
         board = PyBoard()
-        move_count = 0
         nets = [black_net, white_net]  # index 0=black, 1=white
 
         while True:
@@ -313,14 +361,17 @@ class GomokuTrainer:
                 root, board, net, self.device, add_noise=False
             )
 
-            if temperature > 0:
-                action = np.random.choice(225, p=action_probs)
-            else:
-                action = int(np.argmax(action_probs))
+            # If no legal moves, current player loses
+            if len(board.legal_moves()) == 0:
+                last_player = 1 if board.current_player == 2 else 2
+                winner_is_new = (new_net_is_black and last_player == 1) or \
+                                (not new_net_is_black and last_player == 2)
+                return 1 if winner_is_new else -1
+
+            action = int(np.argmax(action_probs))
 
             x, y = action % 15, action // 15
             board.play_move(x, y, board.current_player)
-            move_count += 1
 
             # Check winner
             last_player = 1 if board.current_player == 2 else 2

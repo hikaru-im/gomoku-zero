@@ -110,6 +110,8 @@ void Board::copy_from(const Board& other) {
 
 void Board::set_stone(int x, int y, int player) {
     int idx = y * BOARD_SIZE + x;
+    if (x < 0 || x >= BOARD_SIZE || y < 0 || y >= BOARD_SIZE) return;
+    if (!is_empty(x, y)) return;  // reject occupied cell
     if (player == 1) black_.set(idx);
     else             white_.set(idx);
     move_history_.push_back({x, y, player});
@@ -356,32 +358,6 @@ int Board::count_fours(int x, int y) {
     return four_count;
 }
 
-// ─── Helper: shallow forbidden check (overline + double-four only, no double-three) ───
-// Used by live-three detection to break recursion at depth 1.
-
-bool Board::is_forbidden_no_three(int px, int py) {
-    if (!is_empty(px, py)) return false;
-
-    int pidx = py * BOARD_SIZE + px;
-    black_.set(pidx);
-
-    // Exactly five → not forbidden
-    if (has_exactly_five(black_)) {
-        black_.clear(pidx);
-        return false;
-    }
-
-    // Overline → forbidden
-    black_.clear(pidx);
-    if (has_overline_at(px, py)) return true;
-
-    // Double-four → forbidden
-    if (count_fours(px, py) >= 2) return true;
-
-    // Do NOT check double-three (this breaks recursion)
-    return false;
-}
-
 // ─── Count live threes at (x,y) — strict Renju definition ───
 // A "live three" = a configuration where placing one more black stone (at a legal
 // non-forbidden point, without immediately making five) creates a straight four.
@@ -412,9 +388,11 @@ int Board::count_live_threes(int x, int y) {
             black_.clear(py * BOARD_SIZE + px);
             if (makes_five) continue;
 
-            // Check if (px,py) is forbidden (shallow: overline + double-four only)
-            // If forbidden, this extension is illegal → not a live three
-            if (is_forbidden_no_three(px, py)) continue;
+            // Check if (px,py) is forbidden (full check including double-three).
+            // If forbidden, this extension is illegal → not a valid live three.
+            // Safe from infinite recursion: is_forbidden(P) calls count_live_threes(P)
+            // which checks P's extension points Q ≠ P (P already has a temp stone).
+            if (is_forbidden(px, py)) continue;
 
             // Check if placing at (px,py) creates a straight four in this direction
             // A straight four = 4 consecutive blacks with both neighbors empty,

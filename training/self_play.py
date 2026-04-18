@@ -27,6 +27,7 @@ def play_one_game(network, device="cpu", num_simulations=400,
     game_data = []
     move_count = 0
     resign_counter = 0
+    last_resign_player = 0  # track which player last incremented the counter
 
     while True:
         state = board.get_state()  # (3, 15, 15)
@@ -38,6 +39,11 @@ def play_one_game(network, device="cpu", num_simulations=400,
         # Run MCTS
         root = Node()
         action_probs = mcts.search(root, board, network, device, add_noise=True)
+
+        # If no legal moves, game is over (current player loses)
+        if len(board.legal_moves()) == 0:
+            result = -1 if player == 1 else 1
+            break
 
         # Apply temperature to get visit-based policy
         if temperature > 0:
@@ -68,12 +74,17 @@ def play_one_game(network, device="cpu", num_simulations=400,
                           policy.astype(np.float32),
                           player))
 
-        # Check resignation (consecutive low root values regardless of player)
+        # Check resignation — only count consecutive low values for the SAME player.
         root_value = root.q_value if root.visit_count > 0 else 0.0
         if root_value < resign_threshold:
-            resign_counter += 1
+            if player == last_resign_player:
+                resign_counter += 1
+            else:
+                resign_counter = 1
+                last_resign_player = player
         else:
             resign_counter = 0
+            last_resign_player = 0
 
         if resign_counter >= resign_count:
             # Resign: current player loses
